@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>庫存記帳 - Mini App 展示</title>
+<style>
+  :root{
+    --tg-blue:#2AABEE;
+    --tg-blue-dark:#229ED9;
+    --bg:#EFEFF4;
+    --card:#FFFFFF;
+    --text:#1c1c1e;
+    --sub:#8e8e93;
+    --line:#e3e3e8;
+    --danger:#ff3b30;
+    --good:#34c759;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    justify-content:center;
+    padding:24px 12px;
+  }
+  .phone{
+    width:100%;
+    max-width:420px;
+  }
+  .topbar{
+    background:linear-gradient(180deg,var(--tg-blue),var(--tg-blue-dark));
+    color:white;
+    padding:16px 18px;
+    border-radius:16px 16px 0 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .topbar h1{
+    font-size:17px;
+    margin:0;
+    font-weight:600;
+  }
+  .topbar span{
+    font-size:12px;
+    opacity:.85;
+  }
+  .list{
+    background:var(--card);
+    border-radius:0 0 16px 16px;
+    overflow:hidden;
+    box-shadow:0 2px 10px rgba(0,0,0,.06);
+  }
+  .row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:12px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  .row:last-child{border-bottom:none;}
+  .row.header{
+    background:#fafafa;
+    color:var(--sub);
+    font-size:12px;
+    font-weight:600;
+    letter-spacing:.02em;
+  }
+  .col-name{flex:1; min-width:0;}
+  .col-qty{width:56px; text-align:center; font-weight:600; font-size:16px;}
+  .col-plus, .col-minus{
+    width:32px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  input.name-input{
+    width:100%;
+    border:none;
+    background:transparent;
+    font-size:15px;
+    font-weight:500;
+    color:var(--text);
+    padding:4px 2px;
+    border-radius:6px;
+  }
+  input.name-input:focus{
+    outline:none;
+    background:#f2f6fb;
+  }
+  button.stepper{
+    width:32px;
+    height:32px;
+    border-radius:10px;
+    border:none;
+    font-size:18px;
+    font-weight:700;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    transition:transform .08s ease;
+  }
+  button.stepper:active{ transform:scale(.9); }
+  button.plus{ background:rgba(52,199,89,.12); color:var(--good); }
+  button.minus{ background:rgba(255,59,48,.12); color:var(--danger); }
+  .qty-flash{
+    animation:flash .3s ease;
+  }
+  @keyframes flash{
+    0%{ color:var(--tg-blue); transform:scale(1.25); }
+    100%{ color:var(--text); transform:scale(1); }
+  }
+  .add-row{
+    display:flex;
+    justify-content:center;
+    padding:14px;
+  }
+  .add-btn{
+    border:none;
+    background:var(--tg-blue);
+    color:white;
+    padding:10px 18px;
+    border-radius:20px;
+    font-size:14px;
+    font-weight:600;
+    cursor:pointer;
+  }
+  .add-btn:active{ opacity:.8; }
+  .footnote{
+    text-align:center;
+    color:var(--sub);
+    font-size:11px;
+    margin-top:10px;
+  }
+  .log-card{
+    background:var(--card);
+    border-radius:16px;
+    margin-top:14px;
+    padding:12px 14px;
+    box-shadow:0 2px 10px rgba(0,0,0,.06);
+  }
+  .log-card h2{
+    font-size:13px;
+    margin:0 0 8px;
+    color:var(--sub);
+    font-weight:600;
+  }
+  .log-row{
+    display:flex;
+    justify-content:space-between;
+    font-size:13px;
+    padding:6px 0;
+    border-bottom:1px solid var(--line);
+  }
+  .log-row:last-child{ border-bottom:none; }
+  .log-row .log-time{ color:var(--danger); font-variant-numeric:tabular-nums; }
+  .log-empty{ color:var(--sub); font-size:13px; padding:4px 0; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="topbar">
+    <h1>📦 庫存記帳</h1>
+    <span>Telegram Mini App</span>
+  </div>
+  <div class="list" id="list">
+    <div class="row header">
+      <div class="col-plus"></div>
+      <div class="col-name">名稱</div>
+      <div class="col-qty">數量</div>
+      <div class="col-minus"></div>
+    </div>
+    <!-- rows injected by JS -->
+  </div>
+  <div class="add-row">
+    <button class="add-btn" onclick="addItem()">＋ 新增項目</button>
+  </div>
+  <div class="log-card">
+    <h2>🕓 扣減紀錄</h2>
+    <div id="logList"></div>
+  </div>
+  <div class="footnote">點擊名稱可直接修改文字・這是互動展示，資料不會保存</div>
+</div>
+
+<script>
+let items = [
+  { id: 1, name: '東西1', qty: 10 },
+  { id: 2, name: '東西2', qty: 9 },
+  { id: 3, name: '東西3', qty: 8 },
+];
+let nextId = 4;
+let log = [];
+
+function render(){
+  const list = document.getElementById('list');
+  // remove old item rows (keep header)
+  list.querySelectorAll('.item-row').forEach(el => el.remove());
+
+  items.forEach(item => {
+    const row = document.createElement('div');
+    row.className = 'row item-row';
+    row.innerHTML = `
+      <div class="col-plus">
+        <button class="stepper plus" onclick="changeQty(${item.id}, 1)">＋</button>
+      </div>
+      <div class="col-name">
+        <input class="name-input" value="${item.name}" data-id="${item.id}" onchange="renameItem(${item.id}, this.value)">
+      </div>
+      <div class="col-qty" id="qty-${item.id}">${item.qty}</div>
+      <div class="col-minus">
+        <button class="stepper minus" onclick="changeQty(${item.id}, -1)">－</button>
+      </div>
+    `;
+    list.appendChild(row);
+  });
+}
+
+function changeQty(id, delta){
+  const item = items.find(i => i.id === id);
+  if(!item) return;
+  item.qty = Math.max(0, item.qty + delta);
+  const el = document.getElementById('qty-' + id);
+  el.textContent = item.qty;
+  el.classList.remove('qty-flash');
+  void el.offsetWidth;
+  el.classList.add('qty-flash');
+
+  if(delta < 0){
+    const now = new Date();
+    const time = now.toLocaleString('zh-TW', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
+    log.unshift({ name: item.name, time });
+    renderLog();
+  }
+}
+
+function renderLog(){
+  const box = document.getElementById('logList');
+  if(log.length === 0){
+    box.innerHTML = '<div class="log-empty">尚無扣減紀錄</div>';
+    return;
+  }
+  box.innerHTML = log.slice(0, 8).map(entry => `
+    <div class="log-row">
+      <span>${entry.name}</span>
+      <span class="log-time">－1・${entry.time}</span>
+    </div>
+  `).join('');
+}
+
+function renameItem(id, value){
+  const item = items.find(i => i.id === id);
+  if(item) item.name = value;
+}
+
+function addItem(){
+  items.push({ id: nextId, name: '新項目' + nextId, qty: 0 });
+  nextId++;
+  render();
+}
+
+render();
+renderLog();
+</script>
+</body>
+</html>
