@@ -3,6 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <title>庫存記帳 - Mini App 展示</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
 <style>
   :root{
     --tg-blue:#2AABEE;
@@ -182,21 +183,46 @@
     <h2>🕓 扣減紀錄</h2>
     <div id="logList"></div>
   </div>
-  <div class="footnote">點擊名稱可直接修改文字・這是互動展示，資料不會保存</div>
+  <div class="footnote">點擊名稱可直接修改文字・資料即時同步到後端</div>
 </div>
 
 <script>
-let items = [
-  { id: 1, name: '東西1', qty: 10 },
-  { id: 2, name: '東西2', qty: 9 },
-  { id: 3, name: '東西3', qty: 8 },
-];
-let nextId = 4;
+// 部署後端後，把這裡換成你的 Render 網址，例如：
+// const BACKEND_URL = 'https://sada-ledger-api.onrender.com';
+const BACKEND_URL = 'https://ada-ledger-api.onrender.com';
+
+let items = [];
 let log = [];
+let useBackend = true;
+let nextLocalId = 1;
+
+async function loadState(){
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/items`);
+    if(!res.ok) throw new Error('bad response');
+    const data = await res.json();
+    items = data.items;
+    log = data.log;
+    useBackend = true;
+  }catch(err){
+    // 連不到後端（例如還沒部署、或 BACKEND_URL 還是預留位置）
+    // 自動切換成本地展示模式，方便先看畫面跟操作手感
+    useBackend = false;
+    items = [
+      { id: 'local-1', name: '東西1', qty: 10 },
+      { id: 'local-2', name: '東西2', qty: 9 },
+      { id: 'local-3', name: '東西3', qty: 8 },
+    ];
+    log = [];
+    document.getElementById('list').insertAdjacentHTML('beforebegin',
+      '<div class="log-card" style="margin-bottom:14px;"><div class="log-empty">⚠️ 尚未連上後端，目前是本地展示模式，操作不會保存。部署好後端並填入 BACKEND_URL 後會自動改為即時同步。</div></div>');
+  }
+  render();
+  renderLog();
+}
 
 function render(){
   const list = document.getElementById('list');
-  // remove old item rows (keep header)
   list.querySelectorAll('.item-row').forEach(el => el.remove());
 
   items.forEach(item => {
@@ -204,35 +230,55 @@ function render(){
     row.className = 'row item-row';
     row.innerHTML = `
       <div class="col-plus">
-        <button class="stepper plus" onclick="changeQty(${item.id}, 1)">＋</button>
+        <button class="stepper plus" onclick="changeQty('${item.id}', 1)">＋</button>
       </div>
       <div class="col-name">
-        <input class="name-input" value="${item.name}" data-id="${item.id}" onchange="renameItem(${item.id}, this.value)">
+        <input class="name-input" value="${item.name}" data-id="${item.id}" onchange="renameItem('${item.id}', this.value)">
       </div>
       <div class="col-qty" id="qty-${item.id}">${item.qty}</div>
       <div class="col-minus">
-        <button class="stepper minus" onclick="changeQty(${item.id}, -1)">－</button>
+        <button class="stepper minus" onclick="changeQty('${item.id}', -1)">－</button>
       </div>
     `;
     list.appendChild(row);
   });
 }
 
-function changeQty(id, delta){
-  const item = items.find(i => i.id === id);
-  if(!item) return;
-  item.qty = Math.max(0, item.qty + delta);
+async function changeQty(id, delta){
   const el = document.getElementById('qty-' + id);
-  el.textContent = item.qty;
   el.classList.remove('qty-flash');
   void el.offsetWidth;
   el.classList.add('qty-flash');
 
-  if(delta < 0){
-    const now = new Date();
-    const time = now.toLocaleString('zh-TW', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
-    log.unshift({ name: item.name, time });
+  if(!useBackend){
+    const item = items.find(i => i.id === id);
+    if(!item) return;
+    item.qty = Math.max(0, item.qty + delta);
+    el.textContent = item.qty;
+    if(delta < 0){
+      const now = new Date();
+      const time = now.toLocaleString('zh-TW', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
+      log.unshift({ name: item.name, time });
+      log = log.slice(0, 50);
+      renderLog();
+    }
+    return;
+  }
+
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/items/${id}/adjust`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ delta })
+    });
+    const data = await res.json();
+    items = data.items;
+    log = data.log;
+    const item = items.find(i => i.id === id);
+    if(item) el.textContent = item.qty;
     renderLog();
+  }catch(err){
+    console.error(err);
   }
 }
 
@@ -250,19 +296,60 @@ function renderLog(){
   `).join('');
 }
 
-function renameItem(id, value){
-  const item = items.find(i => i.id === id);
-  if(item) item.name = value;
+async function renameItem(id, value){
+  if(!useBackend){
+    const item = items.find(i => i.id === id);
+    if(item) item.name = value;
+    return;
+  }
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: value })
+    });
+    const data = await res.json();
+    items = data.items;
+  }catch(err){
+    console.error(err);
+  }
 }
 
-function addItem(){
-  items.push({ id: nextId, name: '新項目' + nextId, qty: 0 });
-  nextId++;
-  render();
+async function addItem(){
+  if(!useBackend){
+    items.push({ id: 'local-' + (++nextLocalId), name: '新項目' + nextLocalId, qty: 0 });
+    render();
+    return;
+  }
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/items`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: '新項目' })
+    });
+    const data = await res.json();
+    items = data.items;
+    render();
+  }catch(err){
+    console.error(err);
+  }
 }
 
-render();
-renderLog();
+loadState();
+
+// Telegram WebApp 整合：只有在 TG 裡打開才會生效，一般瀏覽器預覽不受影響
+if (window.Telegram && window.Telegram.WebApp) {
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+
+  const applyTheme = () => {
+    const p = tg.themeParams || {};
+    if (p.bg_color) document.body.style.background = p.bg_color;
+  };
+  applyTheme();
+  tg.onEvent('themeChanged', applyTheme);
+}
 </script>
 </body>
 </html>
