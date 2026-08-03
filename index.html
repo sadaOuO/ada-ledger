@@ -70,12 +70,38 @@
     letter-spacing:.02em;
   }
   .col-name{flex:1; min-width:0;}
-  .col-qty{width:56px; text-align:center; font-weight:600; font-size:16px;}
-  .col-plus, .col-minus{
+  .col-qty{width:56px;}
+  .col-plus, .col-minus, .col-delete{
     width:32px;
     display:flex;
     align-items:center;
     justify-content:center;
+  }
+  input.qty-input{
+    width:100%;
+    border:none;
+    background:transparent;
+    font-size:16px;
+    font-weight:600;
+    color:var(--text);
+    text-align:center;
+    padding:4px 2px;
+    border-radius:6px;
+    -moz-appearance:textfield;
+  }
+  input.qty-input::-webkit-outer-spin-button,
+  input.qty-input::-webkit-inner-spin-button{
+    -webkit-appearance:none;
+    margin:0;
+  }
+  input.qty-input:focus{
+    outline:none;
+    background:#f2f6fb;
+  }
+  button.stepper.delete{
+    background:rgba(142,142,147,.12);
+    color:var(--sub);
+    font-size:14px;
   }
   input.name-input{
     width:100%;
@@ -173,6 +199,7 @@
       <div class="col-name">名稱</div>
       <div class="col-qty">數量</div>
       <div class="col-minus"></div>
+      <div class="col-delete"></div>
     </div>
     <!-- rows injected by JS -->
   </div>
@@ -183,7 +210,7 @@
     <h2>🕓 扣減紀錄</h2>
     <div id="logList"></div>
   </div>
-  <div class="footnote">點擊名稱可直接修改文字・資料即時同步到後端</div>
+  <div class="footnote">名稱與數量都可直接點擊輸入・按 🗑 可刪除項目・資料即時同步到後端</div>
 </div>
 
 <script>
@@ -235,9 +262,14 @@ function render(){
       <div class="col-name">
         <input class="name-input" value="${item.name}" data-id="${item.id}" onchange="renameItem('${item.id}', this.value)">
       </div>
-      <div class="col-qty" id="qty-${item.id}">${item.qty}</div>
+      <div class="col-qty">
+        <input class="qty-input" id="qty-${item.id}" type="number" value="${item.qty}" onchange="setQty('${item.id}', this.value)">
+      </div>
       <div class="col-minus">
         <button class="stepper minus" onclick="changeQty('${item.id}', -1)">－</button>
+      </div>
+      <div class="col-delete">
+        <button class="stepper delete" onclick="deleteItem('${item.id}', '${item.name.replace(/'/g, "\\'")}')">🗑</button>
       </div>
     `;
     list.appendChild(row);
@@ -254,11 +286,11 @@ async function changeQty(id, delta){
     const item = items.find(i => i.id === id);
     if(!item) return;
     item.qty = Math.max(0, item.qty + delta);
-    el.textContent = item.qty;
+    el.value = item.qty;
     if(delta < 0){
       const now = new Date();
       const time = now.toLocaleString('zh-TW', { month:'2-digit', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:false });
-      log.unshift({ name: item.name, time });
+      log.unshift({ name: item.name, amount: Math.abs(delta), time });
       log = log.slice(0, 50);
       renderLog();
     }
@@ -275,7 +307,7 @@ async function changeQty(id, delta){
     items = data.items;
     log = data.log;
     const item = items.find(i => i.id === id);
-    if(item) el.textContent = item.qty;
+    if(item) el.value = item.qty;
     renderLog();
   }catch(err){
     console.error(err);
@@ -291,7 +323,7 @@ function renderLog(){
   box.innerHTML = log.slice(0, 8).map(entry => `
     <div class="log-row">
       <span>${entry.name}</span>
-      <span class="log-time">－1・${entry.time}</span>
+      <span class="log-time">－${entry.amount || 1}・${entry.time}</span>
     </div>
   `).join('');
 }
@@ -310,6 +342,46 @@ async function renameItem(id, value){
     });
     const data = await res.json();
     items = data.items;
+  }catch(err){
+    console.error(err);
+  }
+}
+
+async function setQty(id, value){
+  const qty = Math.max(0, parseInt(value, 10) || 0);
+  if(!useBackend){
+    const item = items.find(i => i.id === id);
+    if(item) item.qty = qty;
+    render();
+    return;
+  }
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/items/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ qty })
+    });
+    const data = await res.json();
+    items = data.items;
+    render();
+  }catch(err){
+    console.error(err);
+  }
+}
+
+async function deleteItem(id, name){
+  if(!confirm(`確定要刪除「${name}」嗎？這個動作無法復原。`)) return;
+
+  if(!useBackend){
+    items = items.filter(i => i.id !== id);
+    render();
+    return;
+  }
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/items/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    items = data.items;
+    render();
   }catch(err){
     console.error(err);
   }
