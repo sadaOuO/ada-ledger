@@ -1,0 +1,371 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<title>代儲記帳</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --tg-blue:#2AABEE;
+    --tg-blue-dark:#229ED9;
+    --bg:#EFEFF4;
+    --card:#FFFFFF;
+    --text:#1c1c1e;
+    --sub:#8e8e93;
+    --line:#e3e3e8;
+    --danger:#ff3b30;
+    --good:#34c759;
+  }
+  *{box-sizing:border-box;}
+  body{
+    margin:0;
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","PingFang TC","Microsoft JhengHei",sans-serif;
+    background:var(--bg);
+    color:var(--text);
+    display:flex;
+    justify-content:center;
+    padding:24px 12px;
+  }
+  .phone{ width:100%; max-width:420px; }
+  .topbar{
+    background:linear-gradient(180deg,var(--tg-blue),var(--tg-blue-dark));
+    color:white;
+    padding:16px 18px;
+    border-radius:16px 16px 0 0;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+  }
+  .topbar h1{ font-size:17px; margin:0; font-weight:600; }
+  .topbar span{ font-size:12px; opacity:.85; }
+  .topbar a.switch-link{
+    color:white;
+    font-size:12px;
+    text-decoration:underline;
+    opacity:.9;
+  }
+
+  .card{
+    background:var(--card);
+    padding:14px 16px;
+    box-shadow:0 2px 10px rgba(0,0,0,.06);
+  }
+  .card.rate-card{ border-radius:0 0 16px 16px; }
+  .card.stat-card{ border-radius:16px; margin-top:14px; }
+  .card.form-card{ border-radius:16px; margin-top:14px; }
+  .card.list-card{ border-radius:16px; margin-top:14px; padding:0; overflow:hidden; }
+
+  .section-label{
+    font-size:12px;
+    color:var(--sub);
+    font-weight:600;
+    margin-bottom:8px;
+  }
+
+  .rate-row{ display:flex; gap:8px; align-items:center; }
+  .rate-field{ flex:1; }
+  .rate-field label{ display:block; font-size:11px; color:var(--sub); margin-bottom:2px; }
+  .rate-field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:8px 10px;
+    font-size:15px;
+    font-weight:600;
+    color:var(--text);
+  }
+  .rate-field input:focus{ outline:none; border-color:var(--tg-blue); }
+  .save-rate-btn{
+    border:none;
+    background:var(--tg-blue);
+    color:white;
+    padding:10px 14px;
+    border-radius:8px;
+    font-size:13px;
+    font-weight:600;
+    cursor:pointer;
+    white-space:nowrap;
+  }
+  .save-rate-btn:active{ opacity:.8; }
+  .rate-hint{ font-size:11px; color:var(--sub); margin-top:6px; }
+
+  .stat-grid{
+    display:grid;
+    grid-template-columns:repeat(3,1fr);
+    gap:8px;
+  }
+  .stat-box{ text-align:center; }
+  .stat-box .num{ font-size:18px; font-weight:700; }
+  .stat-box .label{ font-size:11px; color:var(--sub); margin-top:2px; }
+  .stat-box.profit .num{ color:var(--good); }
+
+  .form-grid{ display:flex; flex-direction:column; gap:8px; }
+  .form-field label{ display:block; font-size:12px; color:var(--sub); margin-bottom:3px; }
+  .form-field input{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:8px;
+    padding:9px 10px;
+    font-size:15px;
+    color:var(--text);
+  }
+  .form-field input:focus{ outline:none; border-color:var(--tg-blue); }
+  .add-tx-btn{
+    border:none;
+    background:var(--good);
+    color:white;
+    padding:11px;
+    border-radius:8px;
+    font-size:14px;
+    font-weight:700;
+    cursor:pointer;
+    margin-top:4px;
+  }
+  .add-tx-btn:active{ opacity:.85; }
+  .form-preview{
+    font-size:12px;
+    color:var(--sub);
+    text-align:center;
+    min-height:16px;
+  }
+
+  .tx-row{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    padding:11px 14px;
+    border-bottom:1px solid var(--line);
+  }
+  .tx-row:last-child{ border-bottom:none; }
+  .tx-row .tx-main{ flex:1; min-width:0; }
+  .tx-row .tx-name{ font-size:14px; font-weight:600; }
+  .tx-row .tx-sub{ font-size:11px; color:var(--sub); margin-top:2px; }
+  .tx-row .tx-profit{ font-size:14px; font-weight:700; color:var(--good); text-align:right; }
+  .tx-row .tx-del{
+    border:none;
+    background:rgba(142,142,147,.12);
+    color:var(--sub);
+    width:26px;
+    height:26px;
+    border-radius:8px;
+    font-size:12px;
+    cursor:pointer;
+  }
+  .list-empty{ padding:20px; text-align:center; color:var(--sub); font-size:13px; }
+
+  .footnote{ text-align:center; color:var(--sub); font-size:11px; margin-top:10px; }
+</style>
+</head>
+<body>
+<div class="phone">
+  <div class="topbar">
+    <h1>💱 代儲記帳</h1>
+    <a class="switch-link" href="index.html">📦 庫存記帳</a>
+  </div>
+  <div style="text-align:right; margin-top:-6px;">
+    <span id="dateLabel" style="font-size:11px; color:var(--sub);"></span>
+  </div>
+
+  <div class="card rate-card">
+    <div class="section-label">今日匯率</div>
+    <div class="rate-row">
+      <div class="rate-field">
+        <label>人民幣匯率</label>
+        <input type="number" step="0.01" id="rmbRate" placeholder="4.36">
+      </div>
+      <div class="rate-field">
+        <label>買進匯率</label>
+        <input type="number" step="0.01" id="buyRate" placeholder="5.05">
+      </div>
+      <button class="save-rate-btn" onclick="saveRate()">設定</button>
+    </div>
+    <div class="rate-hint" id="rateHint">尚未設定今日匯率</div>
+  </div>
+
+  <div class="card stat-card">
+    <div class="section-label">今日總覽</div>
+    <div class="stat-grid">
+      <div class="stat-box">
+        <div class="num" id="statCount">0</div>
+        <div class="label">筆數</div>
+      </div>
+      <div class="stat-box">
+        <div class="num" id="statReceived">0</div>
+        <div class="label">總收款</div>
+      </div>
+      <div class="stat-box profit">
+        <div class="num" id="statProfit">0</div>
+        <div class="label">總淨賺</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card form-card">
+    <div class="section-label">新增一筆交易</div>
+    <div class="form-grid">
+      <div class="form-field">
+        <label>客戶名稱</label>
+        <input type="text" id="txCustomer" placeholder="柯宇">
+      </div>
+      <div class="form-field">
+        <label>收款金額</label>
+        <input type="number" step="0.01" id="txReceived" placeholder="2000" oninput="updatePreview()">
+      </div>
+      <div class="form-field">
+        <label>美金價格</label>
+        <input type="number" step="0.01" id="txUsd" placeholder="86" oninput="updatePreview()">
+      </div>
+      <div class="form-preview" id="txPreview"></div>
+      <button class="add-tx-btn" onclick="addTransaction()">＋ 新增交易</button>
+    </div>
+  </div>
+
+  <div class="card list-card">
+    <div id="txList"></div>
+  </div>
+
+  <div class="footnote">先設定今日匯率，之後每筆交易自動套用同一組匯率計算成本與淨賺</div>
+</div>
+
+<script>
+// 部署後端後，把這裡換成你的 Render 網址
+const BACKEND_URL = 'https://ada-ledger-api.onrender.com';
+
+let currentRate = null;
+
+async function loadToday(){
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/sales/today`);
+    if(!res.ok) throw new Error('bad response');
+    const data = await res.json();
+    render(data);
+  }catch(err){
+    document.getElementById('rateHint').textContent = '⚠️ 連不上後端，請確認 BACKEND_URL 或後端是否已上線';
+    console.error(err);
+  }
+}
+
+function render(data){
+  currentRate = data.rate;
+  document.getElementById('dateLabel').textContent = data.date;
+
+  if(data.rate){
+    document.getElementById('rmbRate').value = data.rate.rmb_rate;
+    document.getElementById('buyRate').value = data.rate.buy_rate;
+    document.getElementById('rateHint').textContent = `目前套用：人民幣 ${data.rate.rmb_rate}／買進 ${data.rate.buy_rate}`;
+  }else{
+    document.getElementById('rateHint').textContent = '尚未設定今日匯率，請先設定才能新增交易';
+  }
+
+  document.getElementById('statCount').textContent = data.count;
+  document.getElementById('statReceived').textContent = data.total_received;
+  document.getElementById('statProfit').textContent = data.total_profit;
+
+  const list = document.getElementById('txList');
+  if(data.transactions.length === 0){
+    list.innerHTML = '<div class="list-empty">今天還沒有交易紀錄</div>';
+    return;
+  }
+  list.innerHTML = data.transactions.map(t => `
+    <div class="tx-row">
+      <div class="tx-main">
+        <div class="tx-name">${t.customer}</div>
+        <div class="tx-sub">${t.time}・收${t.received}／成本${t.cost}</div>
+      </div>
+      <div class="tx-profit">+${t.profit}</div>
+      <button class="tx-del" onclick="deleteTransaction('${t.id}', '${t.customer.replace(/'/g, "\\'")}')">🗑</button>
+    </div>
+  `).join('');
+  updatePreview();
+}
+
+async function saveRate(){
+  const rmb_rate = parseFloat(document.getElementById('rmbRate').value);
+  const buy_rate = parseFloat(document.getElementById('buyRate').value);
+  if(!rmb_rate || !buy_rate){
+    alert('請輸入完整的匯率數字');
+    return;
+  }
+  try{
+    await fetch(`${BACKEND_URL}/api/sales/rate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rmb_rate, buy_rate })
+    });
+    loadToday();
+  }catch(err){
+    console.error(err);
+  }
+}
+
+function updatePreview(){
+  const received = parseFloat(document.getElementById('txReceived').value);
+  const usd = parseFloat(document.getElementById('txUsd').value);
+  const preview = document.getElementById('txPreview');
+  if(!currentRate || !received || !usd){
+    preview.textContent = '';
+    return;
+  }
+  const cost = Math.round(usd * currentRate.buy_rate * currentRate.rmb_rate * 100) / 100;
+  const profit = Math.round((received - cost) * 100) / 100;
+  preview.textContent = `預估成本 ${cost}，淨賺 ${profit}`;
+}
+
+async function addTransaction(){
+  const customer = document.getElementById('txCustomer').value.trim();
+  const received = parseFloat(document.getElementById('txReceived').value);
+  const usd = parseFloat(document.getElementById('txUsd').value);
+
+  if(!customer || !received || !usd){
+    alert('請填寫完整的客戶名稱、收款金額、美金價格');
+    return;
+  }
+  if(!currentRate){
+    alert('請先設定今日匯率');
+    return;
+  }
+
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/sales/transactions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ customer, received, usd })
+    });
+    const data = await res.json();
+    render(data);
+    document.getElementById('txCustomer').value = '';
+    document.getElementById('txReceived').value = '';
+    document.getElementById('txUsd').value = '';
+    document.getElementById('txPreview').textContent = '';
+  }catch(err){
+    console.error(err);
+  }
+}
+
+async function deleteTransaction(id, customer){
+  if(!confirm(`確定要刪除「${customer}」這筆交易嗎？`)) return;
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/sales/transactions/${id}`, { method: 'DELETE' });
+    const data = await res.json();
+    render(data);
+  }catch(err){
+    console.error(err);
+  }
+}
+
+loadToday();
+
+if (window.Telegram && window.Telegram.WebApp) {
+  const tg = window.Telegram.WebApp;
+  tg.ready();
+  tg.expand();
+  const applyTheme = () => {
+    const p = tg.themeParams || {};
+    if (p.bg_color) document.body.style.background = p.bg_color;
+  };
+  applyTheme();
+  tg.onEvent('themeChanged', applyTheme);
+}
+</script>
+</body>
+</html>
