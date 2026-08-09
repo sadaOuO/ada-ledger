@@ -131,26 +131,56 @@
 
   .tx-row{
     display:flex;
-    align-items:center;
-    gap:10px;
+    flex-direction:column;
+    gap:4px;
     padding:11px 14px;
     border-bottom:1px solid var(--line);
   }
   .tx-row:last-child{ border-bottom:none; }
-  .tx-row .tx-main{ flex:1; min-width:0; }
-  .tx-row .tx-name{ font-size:14px; font-weight:600; }
-  .tx-row .tx-sub{ font-size:11px; color:var(--sub); margin-top:2px; }
-  .tx-row .tx-profit{ font-size:14px; font-weight:700; color:var(--good); text-align:right; }
+  .tx-row .tx-top{ display:flex; align-items:center; gap:8px; }
+  .tx-row .tx-name-input{
+    flex:1;
+    min-width:0;
+    border:none;
+    background:transparent;
+    font-size:14px;
+    font-weight:600;
+    color:var(--text);
+    padding:3px 4px;
+    border-radius:6px;
+  }
+  .tx-row .tx-name-input:focus{ outline:none; background:#f2f6fb; }
+  .tx-row .tx-profit{ font-size:14px; font-weight:700; color:var(--good); white-space:nowrap; }
   .tx-row .tx-del{
     border:none;
     background:rgba(142,142,147,.12);
     color:var(--sub);
     width:26px;
     height:26px;
+    flex-shrink:0;
     border-radius:8px;
     font-size:12px;
     cursor:pointer;
   }
+  .tx-row .tx-sub{
+    display:flex;
+    align-items:center;
+    gap:4px;
+    font-size:11px;
+    color:var(--sub);
+    padding-left:4px;
+  }
+  .tx-row .tx-sub-input{
+    width:56px;
+    border:none;
+    background:transparent;
+    font-size:11px;
+    color:var(--text);
+    font-weight:600;
+    padding:2px 3px;
+    border-radius:5px;
+  }
+  .tx-row .tx-sub-input:focus{ outline:none; background:#f2f6fb; }
   .list-empty{ padding:20px; text-align:center; color:var(--sub); font-size:13px; }
 
   .footnote{ text-align:center; color:var(--sub); font-size:11px; margin-top:10px; }
@@ -209,11 +239,21 @@
       </div>
       <div class="form-field">
         <label>收款金額</label>
-        <input type="number" step="0.01" id="txReceived" placeholder="2000" oninput="updatePreview()">
+        <input type="text" id="txReceived" placeholder="2000" oninput="updatePreview()">
       </div>
       <div class="form-field">
         <label>美金價格</label>
-        <input type="number" step="0.01" id="txUsd" placeholder="86" oninput="updatePreview()">
+        <input type="text" id="txUsd" placeholder="86 或 65*2" oninput="updatePreview()">
+      </div>
+      <div class="rate-row" style="margin-top:2px;">
+        <div class="rate-field">
+          <label>自訂人民幣匯率（選填）</label>
+          <input type="number" step="0.01" id="txRmbRate" placeholder="沿用今日匯率" oninput="updatePreview()">
+        </div>
+        <div class="rate-field">
+          <label>自訂買進匯率（選填）</label>
+          <input type="number" step="0.01" id="txBuyRate" placeholder="沿用今日匯率" oninput="updatePreview()">
+        </div>
       </div>
       <div class="form-preview" id="txPreview"></div>
       <button class="add-tx-btn" onclick="addTransaction()">＋ 新增交易</button>
@@ -224,7 +264,7 @@
     <div id="txList"></div>
   </div>
 
-  <div class="footnote">先設定今日匯率，之後每筆交易自動套用同一組匯率計算成本與淨賺</div>
+  <div class="footnote">先設定今日匯率，交易明細客戶名／收款／美金都可直接點擊修改・金額支援 65*2 這種乘法輸入</div>
 </div>
 
 <script>
@@ -268,15 +308,42 @@ function render(data){
   }
   list.innerHTML = data.transactions.map(t => `
     <div class="tx-row">
-      <div class="tx-main">
-        <div class="tx-name">${t.customer}</div>
-        <div class="tx-sub">${t.time}・收${t.received}／成本${t.cost}</div>
+      <div class="tx-top">
+        <input class="tx-name-input" value="${t.customer}" onchange="updateTx('${t.id}', 'customer', this.value)">
+        <div class="tx-profit">+${t.profit}</div>
+        <button class="tx-del" onclick="deleteTransaction('${t.id}', '${t.customer.replace(/'/g, "\\'")}')">🗑</button>
       </div>
-      <div class="tx-profit">+${t.profit}</div>
-      <button class="tx-del" onclick="deleteTransaction('${t.id}', '${t.customer.replace(/'/g, "\\'")}')">🗑</button>
+      <div class="tx-sub">
+        <span>${t.time}・收</span>
+        <input class="tx-sub-input" type="number" step="0.01" value="${t.received}" onchange="updateTx('${t.id}', 'received', this.value)">
+        <span>／美金</span>
+        <input class="tx-sub-input" type="number" step="0.01" value="${t.usd}" onchange="updateTx('${t.id}', 'usd', this.value)">
+        <span>／成本${t.cost}（匯率${t.rmb_rate}／${t.buy_rate}）</span>
+      </div>
     </div>
   `).join('');
   updatePreview();
+}
+
+async function updateTx(id, field, value){
+  const num = parseFloat(value);
+  if(field !== 'customer' && (isNaN(num) || num < 0)){
+    alert('請輸入有效的數字');
+    loadToday();
+    return;
+  }
+  const body = field === 'customer' ? { customer: value } : { [field]: num };
+  try{
+    const res = await fetch(`${BACKEND_URL}/api/sales/transactions/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    });
+    const data = await res.json();
+    render(data);
+  }catch(err){
+    console.error(err);
+  }
 }
 
 async function saveRate(){
@@ -298,44 +365,64 @@ async function saveRate(){
   }
 }
 
+function parseAmountExpr(str){
+  const m = String(str).trim().match(/^(\d+(?:\.\d+)?)(?:\*(\d+(?:\.\d+)?))?$/);
+  if(!m) return NaN;
+  let base = parseFloat(m[1]);
+  if(m[2]) base *= parseFloat(m[2]);
+  return base;
+}
+
 function updatePreview(){
-  const received = parseFloat(document.getElementById('txReceived').value);
-  const usd = parseFloat(document.getElementById('txUsd').value);
+  const received = parseAmountExpr(document.getElementById('txReceived').value);
+  const usd = parseAmountExpr(document.getElementById('txUsd').value);
+  const customRmb = parseFloat(document.getElementById('txRmbRate').value);
+  const customBuy = parseFloat(document.getElementById('txBuyRate').value);
+  const rmb = !isNaN(customRmb) ? customRmb : (currentRate && currentRate.rmb_rate);
+  const buy = !isNaN(customBuy) ? customBuy : (currentRate && currentRate.buy_rate);
   const preview = document.getElementById('txPreview');
-  if(!currentRate || !received || !usd){
+  if(!rmb || !buy || isNaN(received) || isNaN(usd)){
     preview.textContent = '';
     return;
   }
-  const cost = Math.round(usd * currentRate.buy_rate * currentRate.rmb_rate * 100) / 100;
+  const cost = Math.round(usd * buy * rmb * 100) / 100;
   const profit = Math.round((received - cost) * 100) / 100;
-  preview.textContent = `預估成本 ${cost}，淨賺 ${profit}`;
+  preview.textContent = `美金 ${usd}・預估成本 ${cost}，淨賺 ${profit}`;
 }
 
 async function addTransaction(){
   const customer = document.getElementById('txCustomer').value.trim();
-  const received = parseFloat(document.getElementById('txReceived').value);
-  const usd = parseFloat(document.getElementById('txUsd').value);
+  const received = parseAmountExpr(document.getElementById('txReceived').value);
+  const usd = parseAmountExpr(document.getElementById('txUsd').value);
+  const customRmb = parseFloat(document.getElementById('txRmbRate').value);
+  const customBuy = parseFloat(document.getElementById('txBuyRate').value);
 
-  if(!customer || !received || !usd){
-    alert('請填寫完整的客戶名稱、收款金額、美金價格');
+  if(!customer || isNaN(received) || isNaN(usd)){
+    alert('請填寫完整的客戶名稱、收款金額、美金價格（可用 65*2 這種格式）');
     return;
   }
-  if(!currentRate){
-    alert('請先設定今日匯率');
+  if(!currentRate && (isNaN(customRmb) || isNaN(customBuy))){
+    alert('請先設定今日匯率，或在下方填入自訂匯率');
     return;
   }
+
+  const body = { customer, received, usd };
+  if(!isNaN(customRmb)) body.rmb_rate = customRmb;
+  if(!isNaN(customBuy)) body.buy_rate = customBuy;
 
   try{
     const res = await fetch(`${BACKEND_URL}/api/sales/transactions`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ customer, received, usd })
+      body: JSON.stringify(body)
     });
     const data = await res.json();
     render(data);
     document.getElementById('txCustomer').value = '';
     document.getElementById('txReceived').value = '';
     document.getElementById('txUsd').value = '';
+    document.getElementById('txRmbRate').value = '';
+    document.getElementById('txBuyRate').value = '';
     document.getElementById('txPreview').textContent = '';
   }catch(err){
     console.error(err);
