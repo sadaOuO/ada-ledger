@@ -425,6 +425,9 @@ async function deleteItem(id, name){
 // ---------- 拖曳排序 ----------
 let dragRow = null;
 let dragStartY = 0;
+let lastClientY = 0;
+let siblingRects = [];
+let dragRafPending = false;
 
 document.getElementById('list').addEventListener('pointerdown', onDragHandleDown);
 
@@ -437,35 +440,51 @@ function onDragHandleDown(e){
 
   dragRow = row;
   dragStartY = e.clientY;
+  lastClientY = e.clientY;
   row.classList.add('dragging');
   try{ row.setPointerCapture(e.pointerId); }catch(err){}
+  captureSiblingRects();
   row.addEventListener('pointermove', onDragHandleMove);
   row.addEventListener('pointerup', onDragHandleUp);
   row.addEventListener('pointercancel', onDragHandleUp);
 }
 
+function captureSiblingRects(){
+  siblingRects = Array.from(document.querySelectorAll('#list .item-row'))
+    .filter(r => r !== dragRow)
+    .map(r => {
+      const rect = r.getBoundingClientRect();
+      return { el: r, top: rect.top, bottom: rect.bottom, center: rect.top + rect.height / 2 };
+    });
+}
+
 function onDragHandleMove(e){
   if(!dragRow) return;
-  const dy = e.clientY - dragStartY;
+  lastClientY = e.clientY;
+  const dy = lastClientY - dragStartY;
   dragRow.style.transform = `translateY(${dy}px)`;
 
-  const rows = Array.from(document.querySelectorAll('#list .item-row'));
+  if(dragRafPending) return;
+  dragRafPending = true;
+  requestAnimationFrame(checkSwap);
+}
+
+function checkSwap(){
+  dragRafPending = false;
+  if(!dragRow) return;
   const draggedRect = dragRow.getBoundingClientRect();
   const draggedCenter = draggedRect.top + draggedRect.height / 2;
 
-  for(const r of rows){
-    if(r === dragRow) continue;
-    const rect = r.getBoundingClientRect();
-    const center = rect.top + rect.height / 2;
-    if(dy < 0 && draggedCenter < center){
-      r.parentNode.insertBefore(dragRow, r);
-      dragStartY = e.clientY;
+  for(const s of siblingRects){
+    if(draggedCenter > s.top && draggedCenter < s.bottom){
+      if(draggedCenter < s.center){
+        s.el.parentNode.insertBefore(dragRow, s.el);
+      }else{
+        s.el.parentNode.insertBefore(dragRow, s.el.nextSibling);
+      }
+      dragStartY = lastClientY;
       dragRow.style.transform = 'translateY(0)';
-      break;
-    }else if(dy > 0 && draggedCenter > center){
-      r.parentNode.insertBefore(dragRow, r.nextSibling);
-      dragStartY = e.clientY;
-      dragRow.style.transform = 'translateY(0)';
+      captureSiblingRects();
       break;
     }
   }
@@ -480,6 +499,7 @@ function onDragHandleUp(e){
   row.removeEventListener('pointerup', onDragHandleUp);
   row.removeEventListener('pointercancel', onDragHandleUp);
   dragRow = null;
+  siblingRects = [];
 
   const newOrder = Array.from(document.querySelectorAll('#list .item-row')).map(r => r.dataset.id);
   items.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
