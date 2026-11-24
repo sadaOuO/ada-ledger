@@ -77,11 +77,35 @@
   }
   .col-name{flex:1; min-width:0;}
   .col-qty{width:56px;}
-  .col-plus, .col-minus, .col-delete{
+  .col-plus, .col-minus, .col-delete, .col-drag{
     width:32px;
     display:flex;
     align-items:center;
     justify-content:center;
+  }
+  .drag-handle{
+    width:100%;
+    height:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size:16px;
+    color:var(--sub);
+    cursor:grab;
+    touch-action:none;
+    user-select:none;
+    -webkit-user-select:none;
+  }
+  .item-row{
+    background:var(--card);
+    touch-action:pan-y;
+  }
+  .item-row.dragging{
+    position:relative;
+    z-index:10;
+    box-shadow:0 6px 16px rgba(0,0,0,.15);
+    border-radius:10px;
+    background:#fff;
   }
   input.qty-input{
     width:100%;
@@ -201,6 +225,7 @@
   </div>
   <div class="list" id="list">
     <div class="row header">
+      <div class="col-drag"></div>
       <div class="col-plus"></div>
       <div class="col-name">名稱</div>
       <div class="col-qty">數量</div>
@@ -216,7 +241,7 @@
     <h2>🕓 扣減紀錄</h2>
     <div id="logList"></div>
   </div>
-  <div class="footnote">名稱與數量都可直接點擊輸入・按 🗑 可刪除項目・資料即時同步到後端</div>
+  <div class="footnote">名稱與數量都可直接點擊輸入・拖曳左側 ☰ 可調整順序・按 🗑 可刪除項目・資料即時同步到後端</div>
 </div>
 
 <script>
@@ -261,7 +286,11 @@ function render(){
   items.forEach(item => {
     const row = document.createElement('div');
     row.className = 'row item-row';
+    row.dataset.id = item.id;
     row.innerHTML = `
+      <div class="col-drag">
+        <span class="drag-handle">☰</span>
+      </div>
       <div class="col-plus">
         <button class="stepper plus" onclick="changeQty('${item.id}', 1)">＋</button>
       </div>
@@ -388,6 +417,83 @@ async function deleteItem(id, name){
     const data = await res.json();
     items = data.items;
     render();
+  }catch(err){
+    console.error(err);
+  }
+}
+
+// ---------- 拖曳排序 ----------
+let dragRow = null;
+let dragStartY = 0;
+
+document.getElementById('list').addEventListener('pointerdown', onDragHandleDown);
+
+function onDragHandleDown(e){
+  const handle = e.target.closest('.drag-handle');
+  if(!handle) return;
+  const row = handle.closest('.item-row');
+  if(!row) return;
+  e.preventDefault();
+
+  dragRow = row;
+  dragStartY = e.clientY;
+  row.classList.add('dragging');
+  try{ row.setPointerCapture(e.pointerId); }catch(err){}
+  row.addEventListener('pointermove', onDragHandleMove);
+  row.addEventListener('pointerup', onDragHandleUp);
+  row.addEventListener('pointercancel', onDragHandleUp);
+}
+
+function onDragHandleMove(e){
+  if(!dragRow) return;
+  const dy = e.clientY - dragStartY;
+  dragRow.style.transform = `translateY(${dy}px)`;
+
+  const rows = Array.from(document.querySelectorAll('#list .item-row'));
+  const draggedRect = dragRow.getBoundingClientRect();
+  const draggedCenter = draggedRect.top + draggedRect.height / 2;
+
+  for(const r of rows){
+    if(r === dragRow) continue;
+    const rect = r.getBoundingClientRect();
+    const center = rect.top + rect.height / 2;
+    if(dy < 0 && draggedCenter < center){
+      r.parentNode.insertBefore(dragRow, r);
+      dragStartY = e.clientY;
+      dragRow.style.transform = 'translateY(0)';
+      break;
+    }else if(dy > 0 && draggedCenter > center){
+      r.parentNode.insertBefore(dragRow, r.nextSibling);
+      dragStartY = e.clientY;
+      dragRow.style.transform = 'translateY(0)';
+      break;
+    }
+  }
+}
+
+function onDragHandleUp(e){
+  if(!dragRow) return;
+  const row = dragRow;
+  row.style.transform = '';
+  row.classList.remove('dragging');
+  row.removeEventListener('pointermove', onDragHandleMove);
+  row.removeEventListener('pointerup', onDragHandleUp);
+  row.removeEventListener('pointercancel', onDragHandleUp);
+  dragRow = null;
+
+  const newOrder = Array.from(document.querySelectorAll('#list .item-row')).map(r => r.dataset.id);
+  items.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
+  saveOrder(newOrder);
+}
+
+async function saveOrder(order){
+  if(!useBackend) return;
+  try{
+    await fetch(`${BACKEND_URL}/api/items/reorder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ order })
+    });
   }catch(err){
     console.error(err);
   }
