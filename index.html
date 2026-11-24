@@ -547,6 +547,8 @@ if (window.Telegram && window.Telegram.WebApp) {
   tg.ready();
   tg.expand();
 
+  if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
+
   const applyTheme = () => {
     const p = tg.themeParams || {};
     if (p.bg_color) document.body.style.background = p.bg_color;
