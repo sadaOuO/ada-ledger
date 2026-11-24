@@ -476,15 +476,22 @@ function applyTransform(){
 function onDragHandleMove(e){
   if(!dragRow) return;
   lastClientY = e.clientY;
-  applyTransform();
 
+  // 滑鼠移動事件觸發頻率比觸控高很多，這裡統一節流到每禎只做一次，
+  // 避免電腦版每次滑鼠移動都去讀版面位置造成卡頓。
   if(dragRafPending) return;
   dragRafPending = true;
-  requestAnimationFrame(checkSwap);
+  requestAnimationFrame(updateDrag);
+}
+
+function updateDrag(){
+  dragRafPending = false;
+  if(!dragRow) return;
+  applyTransform();
+  checkSwap();
 }
 
 function checkSwap(){
-  dragRafPending = false;
   if(!dragRow) return;
   const dy = lastClientY - dragStartPointerY;
   const targetTop = dragStartOffsetTop + dy;
