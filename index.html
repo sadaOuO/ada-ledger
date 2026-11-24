@@ -77,8 +77,15 @@
   }
   .col-name{flex:1; min-width:0;}
   .col-qty{width:56px;}
-  .col-plus, .col-minus, .col-delete, .col-drag{
+  .col-plus, .col-minus, .col-delete{
     width:32px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .col-drag{
+    width:36px;
+    height:40px;
     display:flex;
     align-items:center;
     justify-content:center;
@@ -89,7 +96,7 @@
     display:flex;
     align-items:center;
     justify-content:center;
-    font-size:16px;
+    font-size:18px;
     color:var(--sub);
     cursor:grab;
     touch-action:none;
@@ -424,9 +431,10 @@ async function deleteItem(id, name){
 
 // ---------- 拖曳排序 ----------
 let dragRow = null;
-let dragStartY = 0;
+let dragStartPointerY = 0;   // 拖曳開始時手指/滑鼠的 Y 座標
+let dragStartOffsetTop = 0;  // 拖曳開始時這一行原本在清單中的位置
 let lastClientY = 0;
-let siblingRects = [];
+let siblingInfo = [];
 let dragRafPending = false;
 
 document.getElementById('list').addEventListener('pointerdown', onDragHandleDown);
@@ -439,30 +447,36 @@ function onDragHandleDown(e){
   e.preventDefault();
 
   dragRow = row;
-  dragStartY = e.clientY;
+  dragStartPointerY = e.clientY;
   lastClientY = e.clientY;
+  dragStartOffsetTop = row.offsetTop;
   row.classList.add('dragging');
   try{ row.setPointerCapture(e.pointerId); }catch(err){}
-  captureSiblingRects();
+  captureSiblingInfo();
   row.addEventListener('pointermove', onDragHandleMove);
   row.addEventListener('pointerup', onDragHandleUp);
   row.addEventListener('pointercancel', onDragHandleUp);
 }
 
-function captureSiblingRects(){
-  siblingRects = Array.from(document.querySelectorAll('#list .item-row'))
+function captureSiblingInfo(){
+  siblingInfo = Array.from(document.querySelectorAll('#list .item-row'))
     .filter(r => r !== dragRow)
-    .map(r => {
-      const rect = r.getBoundingClientRect();
-      return { el: r, top: rect.top, bottom: rect.bottom, center: rect.top + rect.height / 2 };
-    });
+    .map(r => ({ el: r, top: r.offsetTop, height: r.offsetHeight }));
+}
+
+// 不管交換幾次，畫面上的位置永遠 = 「原本位置 + 手指總共移動的距離」，
+// 交換後只是重新計算要用多少 transform 去對齊這個目標位置，不會有跳動感。
+function applyTransform(){
+  const dy = lastClientY - dragStartPointerY;
+  const targetTop = dragStartOffsetTop + dy;
+  const currentFlowTop = dragRow.offsetTop;
+  dragRow.style.transform = `translateY(${targetTop - currentFlowTop}px)`;
 }
 
 function onDragHandleMove(e){
   if(!dragRow) return;
   lastClientY = e.clientY;
-  const dy = lastClientY - dragStartY;
-  dragRow.style.transform = `translateY(${dy}px)`;
+  applyTransform();
 
   if(dragRafPending) return;
   dragRafPending = true;
@@ -472,19 +486,21 @@ function onDragHandleMove(e){
 function checkSwap(){
   dragRafPending = false;
   if(!dragRow) return;
-  const draggedRect = dragRow.getBoundingClientRect();
-  const draggedCenter = draggedRect.top + draggedRect.height / 2;
+  const dy = lastClientY - dragStartPointerY;
+  const targetTop = dragStartOffsetTop + dy;
+  const targetCenter = targetTop + dragRow.offsetHeight / 2;
 
-  for(const s of siblingRects){
-    if(draggedCenter > s.top && draggedCenter < s.bottom){
-      if(draggedCenter < s.center){
+  for(const s of siblingInfo){
+    const sBottom = s.top + s.height;
+    if(targetCenter > s.top && targetCenter < sBottom){
+      const sCenter = s.top + s.height / 2;
+      if(targetCenter < sCenter){
         s.el.parentNode.insertBefore(dragRow, s.el);
       }else{
         s.el.parentNode.insertBefore(dragRow, s.el.nextSibling);
       }
-      dragStartY = lastClientY;
-      dragRow.style.transform = 'translateY(0)';
-      captureSiblingRects();
+      captureSiblingInfo();
+      applyTransform();
       break;
     }
   }
@@ -499,7 +515,7 @@ function onDragHandleUp(e){
   row.removeEventListener('pointerup', onDragHandleUp);
   row.removeEventListener('pointercancel', onDragHandleUp);
   dragRow = null;
-  siblingRects = [];
+  siblingInfo = [];
 
   const newOrder = Array.from(document.querySelectorAll('#list .item-row')).map(r => r.dataset.id);
   items.sort((a, b) => newOrder.indexOf(a.id) - newOrder.indexOf(b.id));
@@ -546,8 +562,6 @@ if (window.Telegram && window.Telegram.WebApp) {
   const tg = window.Telegram.WebApp;
   tg.ready();
   tg.expand();
-
-  if (tg.disableVerticalSwipes) tg.disableVerticalSwipes();
 
   const applyTheme = () => {
     const p = tg.themeParams || {};
